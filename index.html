@@ -1074,7 +1074,7 @@ kbd { display: inline-block; min-width: 1.4em; padding: 0 5px; margin: 0 2px; bo
     }
     // finishing range on the move
     if (d < 3.3 && (toward > 2.0 || d < 1.6)) {
-      const canDunk = (sprint && d > 0.9 && toward > 2.6 && p.stam > 15 && p.a.dunk >= 55 && p.a.vertical + p.h * 20 > 100)
+      const canDunk = (sprint && d > 0.9 && toward > 2.0 && d <= dunkRanges(p).drive && p.stam > 15 && p.a.dunk >= 55 && p.a.vertical + p.h * 20 > 100)
         || (sprint && d <= 1.7 && bt(p, 'riseup') > 0 && p.stam > 10); // Rise Up: standing dunk under the rim
       beginFinish(g, p, canDunk ? 'dunk' : (p.euroArm ? 'euro' : 'layup')); return;
     }
@@ -1246,17 +1246,27 @@ kbd { display: inline-block; min-width: 1.4em; padding: 0 5px; margin: 0 2px; bo
     if (p.fin) p.fin.style = p.dunkStyle;
   }
 
+  // How far out each kind of dunk can start, from ratings, height and the best equipped contact package
+  function dunkRanges(p) {
+    const stand = 0.85 + p.a.standDunk / 99 * 1.15 + (p.h - 1.9) * 1.4;
+    const drive = 3.4 + (p.a.dunk - 70) / 80 + (p.a.vertical - 70) / 110;
+    const tier = Math.max(0, ...((p.anim && p.anim.dunks) || []).map(id => (DUNK_PKGS[id] && DUNK_PKGS[id].tier) || 0));
+    return { stand, step: stand + 0.9, drive, contact: drive + (tier === 2 ? 1.1 : tier === 1 ? 0.6 : 0.25) };
+  }
   // Dunk button: if you're in range for your build you dunk (standing range grows with standing-dunk rating and height)
   function startDunk(g, p) {
     const d = distHoop(p.x, p.z);
     const dx = (C.HOOP_X - p.x) / (d || 1), dz = (C.HOOP_Z - p.z) / (d || 1), toward = p.vx * dx + p.vz * dz;
-    const standRange = 0.85 + p.a.standDunk / 99 * 1.15 + (p.h - 1.9) * 1.4;
-    const driveRange = 3.1 + (p.a.dunk - 70) / 90 + (p.a.vertical - 70) / 120;
-    // a defender in the way slows you down: you can still power up through him (contact dunk) from your drive range
+    const R = dunkRanges(p);
+    // a defender in the way: contact dunks launch from farther out (Pro / Elite contact packages add range) and work even when he slows you down
     let blocker = false;
-    for (const q of g.players) { if (q.team === p.team) continue; const ox = q.x - p.x, oz = q.z - p.z, ahead = ox * dx + oz * dz, side = Math.abs(ox * dz - oz * dx); if (ahead > -0.2 && ahead < Math.min(d + 0.4, 2.2) && side < 1.0) blocker = true; }
-    const drive = toward > (blocker ? 0.15 : 1.6);
-    if ((d <= standRange && p.a.standDunk >= 45) || (d <= driveRange && drive && p.a.dunk >= 50 && p.stam > 12)) { beginFinish(g, p, 'dunk'); return; }
+    for (const q of g.players) { if (q.team === p.team) continue; const ox = q.x - p.x, oz = q.z - p.z, ahead = ox * dx + oz * dz, side = Math.abs(ox * dz - oz * dx); if (ahead > -0.2 && ahead < Math.min(d + 0.4, 3.0) && side < 1.1) blocker = true; }
+    const speed = hyp(p.vx, p.vz), heading = speed > 0.1 ? toward / speed : 0;
+    const moving = toward > 1.0 || (speed > 2.4 && heading > 0.5); // attacking the rim, even at an angle
+    const ok = p.a.dunk >= 50 && p.stam > 12;
+    if (d <= R.stand && p.a.standDunk >= 45) { beginFinish(g, p, 'dunk'); return; } // standing dunk
+    if (d <= R.step && ok && p.a.dunk >= 60) { beginFinish(g, p, 'dunk'); return; } // one power step into it
+    if (ok && (blocker ? (toward > 0.15 && d <= R.contact) : (moving && d <= R.drive))) { beginFinish(g, p, 'dunk'); return; }
     if (d < 3.3) { beginFinish(g, p, 'layup'); return; }
     ev(g, 'no_dunk', { pid: p.id }); // out of range: the button does nothing rather than throwing up a bad shot
   }
