@@ -4307,7 +4307,10 @@ const Net = {
       if (p.ctrl !== 'human' || p.owner === this.tok) continue;
       const peer = peers.find(q => q.presence && q.presence.tok === p.owner);
       const inp = peer && peer.presence.inp;
-      inputs[p.id] = validInput(inp);
+      const v = validInput(inp);
+      // stale input (a slow connection): stop the player instead of letting the last move run on; button presses still count
+      if (v && Date.now() - peer.updatedAt > 350) { v.mx = 0; v.mz = 0; v.h = 0; }
+      inputs[p.id] = v;
     }
     return inputs;
   },
@@ -5150,7 +5153,7 @@ const Game = {
     if (this.mode === 'host') { const humans = this.g.players.filter(p => p.ctrl === 'human'); const away = humans.filter(p => p.discon).length; el.className = conn ? (away ? 'warn' : 'ok') : 'bad'; el.textContent = conn ? `Hosting room ${Net.code.toUpperCase()}` + (away ? ` · ${away} reconnecting` : '') : 'Room connection lost — retrying'; return; }
     const stale = now - Net.lastHostSeen > 2500;
     el.className = !conn ? 'bad' : stale ? 'warn' : 'ok';
-    el.textContent = !conn ? 'Disconnected — retrying' : stale ? 'Waiting for host…' : `Room ${Net.code.toUpperCase()} · ${Math.round(Net.rtt)} ms`;
+    el.textContent = !conn ? 'Disconnected — retrying' : stale ? 'Waiting for host…' : `Room ${Net.code.toUpperCase()} · ${Math.round(Net.rtt)} ms${typeof Relay !== 'undefined' && Net.transport === 'relay' ? ' · relays ' + Relay.brokers.map((b, i) => Relay.status[b.id] === 'ok' ? String(i + 1) : '').filter(Boolean).join('+') : ''}`;
   },
   renderWorld(dt, view) {
     const rv = this.rv;
